@@ -41,6 +41,7 @@ class APIWrapperRemoteProvider:
         extra_params: dict = None,
         page: int = None,
         page_size: int = None,
+        **kwargs,
     ) -> dict:
         """
         Translate geodesic input parameters to API parameters. This function accepts the boson search function
