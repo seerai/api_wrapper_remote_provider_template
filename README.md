@@ -9,15 +9,28 @@ results into Geodesic Features. This template is set up so that the user only ha
 details of those operations, depending on the API in question.
 
 ---
+## Prototyping the Remote Provider
+The first step in building a remote provider is familiarizing yourself with how the external API works. Some items you
+will want to consider are:
+- Is this a data source for which a boson provider already exists?
+- Is the data spatiotemporal in nature?
+- What are the terms of service of the API?
+- Do you need to request an API key or other authorization to access the data?
+- What are the parameters that the external API accepts?
+- What does the data returned from the external API look like?
 
+Once you've decided to write a remote provider, it is recommended that you investigate those last two questions
+with a combination of whatever web interface the remote API provides (if any), and a Jupyter notebook. There is a sample
+notebook in the `notebooks/` directory that you can use to get started.
 
-This is a simple demo showing how a Boson Remote Provider can be used to serve
-simulated data into a GIS application or model. The data generated is a simple
-non-homogeneous Poisson process with a spatial density that is a gaussian 
-for three different locations. Each time the Boson search endpoint is called,
-a new set of lightning points will be generated and returned.
+## Writing the remote provider
+The code for the remote provider is contained in `boson/provider.py`, which does the heavy lifting of translating a boson query
+to an API request, and then translating the API response into a Geodesic `FeatureCollection`, which is what Boson needs to turn
+the external API into a Boson `Dataset`. The `provider.py` in this repo is a template with sample code for each of the parameters that
+need to be translated. Refer to the comments within for further direction on adapting the template to your particular use case.
 
 ## Building the Image
+Once the provider is written, you need to create a Docker image to package the remote provider and associated data and packages.
 Boson remote providers are built as docker images using the Boson Python SDK.
 To build the image, change to the boson directory run the build script
 
@@ -48,7 +61,7 @@ To set up the remote provider, you will need to push the image to a container re
 we will push it to GCP artifact registry.
 
 ```bash
-docker push us-central1-docker.pkg.dev/double-catfish-291717/seerai-docker/images/lightning-simulator:v0.0.1
+docker push us-central1-docker.pkg.dev/double-catfish-291717/seerai-docker/images/<image name>:v0.0.1
 ```
 
 You then need to create a cloud run service using this image. On the GCP console go to cloud run and create a new service.
@@ -63,9 +76,8 @@ is easy to do with the _from_ method:
     
 ```python
 ds = geodesic.Dataset.from_remote_provider(
-    name='lightning-simulation',
-    url='https://lightning-simulator-azwzjbkrwq-uc.a.run.app',
-    middleware=middleware.SearchFilter.spatial()
+    name=<dataset-name>,
+    url='<url-from-cloud-run>',
 )
 ds.save()
 ```
@@ -78,4 +90,8 @@ share = ds.share_as_arcgis_service()
 share.get_feature_layer_url()
 ```
 With this URL you can add the layer into an Arcgis map.
+
+## More info
+You can see more information about remote providers, along with some step by step guidance in the [slides from our Intro to Remote Providers 
+from the Weekly Interesting Talk of Interest from 6/7/2024](https://seerai-my.sharepoint.com/:p:/g/personal/sgilhool_seerai_onmicrosoft_com/ETd3crhrRbtOoS_9W9ciNhoBeejufLu4QZ-i-hdEN2MW8A?e=HpORpB)
 

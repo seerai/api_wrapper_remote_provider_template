@@ -1,6 +1,7 @@
 import logging
 import geodesic
 import requests
+import os
 
 from typing import List, Union
 from datetime import datetime as _datetime
@@ -33,12 +34,11 @@ class APIWrapperRemoteProvider:
         datetime: List[Timestamp] = [],
         intersects: object = None,
         collections: List[str] = [],
-        ids: List[str] = [],
+        feature_ids: List[str] = [],
         filter: Union[CQLFilter, dict] = None,
         fields: Union[List[str], dict] = None,
         sortby: dict = None,
         method: str = "POST",
-        extra_params: dict = None,
         page: int = None,
         page_size: int = None,
         **kwargs,
@@ -101,9 +101,9 @@ class APIWrapperRemoteProvider:
         """
         IDS: Handle ids
         """
-        if ids:
-            logger.info(f"Received ids of length: {len(ids)}")
-            api_params["ids"] = ids
+        if feature_ids:
+            logger.info(f"Received ids of length: {len(feature_ids)}")
+            api_params["ids"] = feature_ids
 
         """
         FILTER: Handle CQL2 filters. The cql2_to_query_params function will convert the CQL2 filter to a dictionary
@@ -144,20 +144,7 @@ class APIWrapperRemoteProvider:
         if "method" in self.queryables():
             logger.info(f"Received method: {method}")
             api_params["method"] = method
-        """
-        # EXTRA_PARAMS: Handle extra parameters. These are parameters that are not part of the geodesic standard, but may
-        be passed to the search function. Here, we assume they are queryable API parameters and update the api_params
-        dict with them. They will overwrite any previously passed parameters. Move any parameters that you don't want overwritten
-        below this block
-        """
-        if extra_params:
-            logger.info(f"Received extra parameters: {extra_params.keys()}")
-
-            # If the extra param is a queryable, add it to the request
-            for key in extra_params:
-                if key in self.queryables():
-                    api_params.update({key: extra_params[key]})
-
+        
         """
         PAGINATION: Handle pagination (page and page_size)
         """
@@ -248,6 +235,11 @@ class APIWrapperRemoteProvider:
             # Parse and use the response data (JSON in this case)
             res = response.json()
 
+            # Check if the response is empty
+            if not res:
+                logger.info("No results returned from API")
+                return []
+            
             features = self.convert_results_to_features(res)
             logger.info(f"Received {len(features)} features")
         else:
@@ -297,35 +289,70 @@ class APIWrapperRemoteProvider:
             "page_size": page_size,
         }
 
+    def get_queryables_from_openapi(self, openapi_path: str) -> dict:
+        '''
+        This method is used to automatically generate the queryables from an openapi file. Manually entering the
+        queryyables is laborious. If the external API provides and OpenAPI spec, this method will read it from
+        a json file and return the queryables automatically. (credit: Mark Schulist)
+        '''
+        with open(openapi_path, 'r') as f: # loading locally because more speedy
+            response = json.load(f)
+        queryables = {}
+        
+        path = '/occurrence/search' # the endpoint we are interested in
+        
+        params = response['paths'][path]['get']['parameters']
+
+        for param in params:
+            title = param.get('name')
+            type = param.get('type')
+            enum = None  # Initialize enum to None before the loop
+            if param.get('schema') is not None:
+                schema = param.get('schema')  # Correctly access the schema from param
+                if schema.get('items') is not None:
+                    items = schema.get('items')
+                    enum = items.get('enum')
+            if enum is not None:
+                queryables[title] = Property(title=title, type=type, enum=enum)
+            else:
+                queryables[title] = Property(title=title, type=type)
+        
+        return queryables
+
     def queryables(self, **kwargs) -> dict:
         """
         Update this method to return a dictionary of queryable parameters that the API accepts.
         The keys should be the parameter names. The values should be a Property object that follows
         the conventions of JSON Schema.
         """
-        return {
-            "example_parameter": Property(
-                title="parameter_title",
-                type="string",
-                enum=[
-                    "option1",
-                    "option2",
-                    "option3",
-                ],
-            ),
-            "example_parameter2": Property(
-                title="parameter_title2",
-                type="integer",
-            ),
-            "example_parameter3": Property(
-                title="parameter_title3",
-                type="integer",
-            ),
-            "example_parameter4": Property(
-                title="parameter_title4",
-                type="boolean",
-            ),
-        }
+        # if you have an openapi file, you can use the get_queryables_from_openapi method
+        # to automatically generate the queryables
+        if os.path.isfile("path_to_openapi_file"):
+            return self.get_queryables_from_openapi(openapi_path="path_to_openapi_file")
+        else:
+            return {
+                "example_parameter": Property(
+                    title="parameter_title",
+                    type="string",
+                    enum=[
+                        "option1",
+                        "option2",
+                        "option3",
+                    ],
+                ),
+                "example_parameter2": Property(
+                    title="parameter_title2",
+                    type="integer",
+                ),
+                "example_parameter3": Property(
+                    title="parameter_title3",
+                    type="integer",
+                ),
+                "example_parameter4": Property(
+                    title="parameter_title4",
+                    type="boolean",
+                ),
+            }
 
 
 api_wrapper = APIWrapperRemoteProvider()
