@@ -1,11 +1,11 @@
 import logging
-import geodesic
 import requests
 import os
 
 from typing import List, Union
 from datetime import datetime as _datetime
-
+import json
+import geopandas as gpd
 
 from boson.http import serve
 from boson.boson_core_pb2 import Property
@@ -23,7 +23,7 @@ class APIWrapperRemoteProvider:
         self.api_url = "api endpoint url goes here"
         self.max_page_size = 200
         self.api_default_params = {
-            # Example
+            # TODO: Add default parameters to the request
             "api_key": "api key goes here",
             "format": "json",
         }
@@ -31,7 +31,7 @@ class APIWrapperRemoteProvider:
     def parse_input_params(
         self,
         bbox: List[float] = [],
-        datetime: List[Timestamp] = [],
+        datetime: List[_datetime] = [],
         intersects: object = None,
         collections: List[str] = [],
         feature_ids: List[str] = [],
@@ -70,12 +70,9 @@ class APIWrapperRemoteProvider:
         if datetime:
             logger.info(f"Received datetime: {datetime}")
 
-            startdate = _datetime.fromtimestamp(datetime[0].seconds)
-            enddate = _datetime.fromtimestamp(datetime[1].seconds)
-
             # Example of how to handle datetime for an API that expect startdate and enddate in YYYY-MM-DD format
-            api_params["startdate"] = startdate.strftime("%Y-%m-%d")
-            api_params["enddate"] = enddate.strftime("%Y-%m-%d")
+            api_params["startdate"] = datetime[0].strftime("%Y-%m-%d")
+            api_params["enddate"] = datetime[1].strftime("%Y-%m-%d")
 
         """
         INTERSECTS: Handle provided geometry. Unless the API accepts a geometry, this will be difficult to implement.
@@ -103,7 +100,7 @@ class APIWrapperRemoteProvider:
         """
         if feature_ids:
             logger.info(f"Received ids of length: {len(feature_ids)}")
-            api_params["ids"] = feature_ids
+            api_params["ids"] = feature_ids # TODO: Update the key to match the API
 
         """
         FILTER: Handle CQL2 filters. The cql2_to_query_params function will convert the CQL2 filter to a dictionary
@@ -144,7 +141,7 @@ class APIWrapperRemoteProvider:
         if "method" in self.queryables():
             logger.info(f"Received method: {method}")
             api_params["method"] = method
-        
+
         """
         PAGINATION: Handle pagination (page and page_size)
         """
@@ -155,71 +152,56 @@ class APIWrapperRemoteProvider:
 
         return api_params
 
-    def convert_results_to_features(
+    def convert_results_to_gdf(
         self, response: Union[dict, List[dict]]
-    ) -> List[geodesic.Feature]:
+    ) -> gpd.GeoDataFrame:
         """
-        Convert the response from the API to a list of geodesic.Features. We are assuming the response is a list of json/dict.
+        Convert the response from the API to a GeoDataFrame. We are assuming the response is a list of json/dict.
         You may need to get the "results" key from the response, depending on the API.
-        The geodesic.Feature class takes:
-        id: str
-        geometry: dict
-        datetime: (str, datetime, datetime64)
-        start_datetime: (str, datetime, datetime64)
-        end_datetime: (str, datetime, datetime64)
-        properties: dict
+
         The template assumes point features and a single datetime, but this can be modified to handle other geometries
         and multiple datetimes. The remaining outputs from the API response can be added to the properties dictionary.
         """
-        features = []
 
         # This may need editing, depending on the API response
         if isinstance(response, dict):
             response = response.get("results", [])
 
-        logger.info("Converting API response to geodesic.Features")
-        logger.info(f"Received {len(response)} results. Converting to geodesic.Features.")
+        logger.info("Converting API response to GeoDataFrame.")
+        logger.info(f"Received {len(response)} results. Converting to GeoDataFrame.")
+        if len(response) == 0:
+            return gpd.GeoDataFrame(columns=["geometry", "id"])
+
         logger.info(f"First result: {response[0]}")
 
-        for observation in response:
+        # TODO: Update the keys to match the API response
+        LATIDUDE_KEY = "Latitude"
+        LONGITUDE_KEY = "Longitude"
+        ID_KEY = "id"
+        DATETIME_KEY = "UTC"
 
-            id = observation.get("id", None)
+        gdf = gpd.GeoDataFrame(
+            response,
+            geometry=gpd.points_from_xy(
+                [obs.get(LONGITUDE_KEY) for obs in response],
+                [obs.get(LATIDUDE_KEY) for obs in response],
+            ),
+        )
 
-            # Extract the coordinates from the observation
-            lat = observation.get("Latitude", 0)
-            lon = observation.get("Longitude", 0)
-            geometry = {"type": "Point", "coordinates": [lon, lat]}
+        gdf.set_index(ID_KEY, inplace=True)
 
-            # In this example, we are assuming the datetime is in the "UTC" key
-            obs_datetime = observation.get("UTC", None)
-            # Convert the string into a datetime object
-            obs_datetime = _datetime.strptime(obs_datetime, "%Y-%m-%dT%H:%M")
+        # TODO: update datetime format
+        gdf["datetime"] = (
+            gdf[DATETIME_KEY]
+            .apply(lambda x: _datetime.strptime(x, format="%Y-%m-%dT%H:%M"))
+            .astype(str)
+        )
 
-            feature_properties = {
-                "id": id,
-                "geometry": geometry,
-                "datetime": obs_datetime,
-            }
+        return gdf
 
-            # Create a geodesic.Feature from the observation
-            feature = geodesic.Feature(
-                **feature_properties,
-            )
-
-            # Add the rest of the observation data to the properties
-            fixed_keys = ["id", "geometry", "datetime"]  # keys you don't want to overwrite
-            for key, value in observation.items():
-                if key not in fixed_keys:
-                    feature["properties"].update({key: value})
-
-            # Add the feature to the list
-            features.append(feature)
-
-        return features
-
-    def request_features(self, **kwargs) -> List[geodesic.Feature]:
+    def request_features(self, **kwargs) -> gpd.GeoDataFrame:
         """
-        Request data from the API and return a list of geodesic.Features. This function is unlikely to need
+        Request data from the API and return a GeoDataFrame. This function is unlikely to need
         modification.
         """
         # Translate the input parameters to API parameters
@@ -239,16 +221,18 @@ class APIWrapperRemoteProvider:
             if not res:
                 logger.info("No results returned from API")
                 return []
-            
-            features = self.convert_results_to_features(res)
+
+            gdf = self.convert_results_to_gdf(res)
             logger.info(f"Received {len(features)} features")
         else:
             logging.error(f"Error: {response.status_code}")
             features = []
 
-        return features
+        return gdf
 
-    def search(self, pagination={}, provider_properties={}, **kwargs) -> geodesic.FeatureCollection:
+    def search(
+        self, pagination={}, provider_properties={}, **kwargs
+    ) -> gpd.GeoDataFrame:
         """Implements the Boson Search endpoint."""
         logger.info("Making request to API.")
         logger.info(f"Search received kwargs: {kwargs}")
@@ -282,41 +266,41 @@ class APIWrapperRemoteProvider:
             )
             # TODO: Update kwargs with relevant keys from provider_properties, or otherwise pass them along
 
-        features = self.request_features(page=page, page_size=page_size, **kwargs)
+        gdf = self.request_features(page=page, page_size=page_size, **kwargs)
 
-        return geodesic.FeatureCollection(features=features), {
+        return gdf, {
             "page": page + 1,
             "page_size": page_size,
         }
 
     def get_queryables_from_openapi(self, openapi_path: str) -> dict:
-        '''
+        """
         This method is used to automatically generate the queryables from an openapi file. Manually entering the
         queryyables is laborious. If the external API provides and OpenAPI spec, this method will read it from
         a json file and return the queryables automatically. (credit: Mark Schulist)
-        '''
-        with open(openapi_path, 'r') as f: # loading locally because more speedy
+        """
+        with open(openapi_path, "r") as f:  # loading locally because more speedy
             response = json.load(f)
         queryables = {}
-        
-        path = '/occurrence/search' # the endpoint we are interested in
-        
-        params = response['paths'][path]['get']['parameters']
+
+        path = "/occurrence/search"  # TODO: Update with path for your API
+
+        params = response["paths"][path]["get"]["parameters"]
 
         for param in params:
-            title = param.get('name')
-            type = param.get('type')
-            enum = None  # Initialize enum to None before the loop
-            if param.get('schema') is not None:
-                schema = param.get('schema')  # Correctly access the schema from param
-                if schema.get('items') is not None:
-                    items = schema.get('items')
-                    enum = items.get('enum')
+            title = param.get("name")
+            type = param.get("type")
+            enum = None
+            if param.get("schema") is not None:
+                schema = param.get("schema")
+                if schema.get("items") is not None:
+                    items = schema.get("items")
+                    enum = items.get("enum")
             if enum is not None:
                 queryables[title] = Property(title=title, type=type, enum=enum)
             else:
                 queryables[title] = Property(title=title, type=type)
-        
+
         return queryables
 
     def queryables(self, **kwargs) -> dict:
