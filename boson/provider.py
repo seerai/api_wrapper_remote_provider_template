@@ -220,13 +220,13 @@ class APIWrapperRemoteProvider:
             # Check if the response is empty
             if not res:
                 logger.info("No results returned from API")
-                return []
+                gdf = gpd.GeoDataFrame(columns=["geometry", "id"])
 
             gdf = self.convert_results_to_gdf(res)
-            logger.info(f"Received {len(features)} features")
+            logger.info(f"Received {len(gdf)} features")
         else:
             logging.error(f"Error: {response.status_code}")
-            features = []
+            gdf = gpd.GeoDataFrame(columns=["geometry", "id"])
 
         return gdf
 
