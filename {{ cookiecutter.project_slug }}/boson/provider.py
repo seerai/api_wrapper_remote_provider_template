@@ -100,7 +100,7 @@ class APIWrapperRemoteProvider:
         """
         if feature_ids:
             logger.info(f"Received ids of length: {len(feature_ids)}")
-            api_params["ids"] = feature_ids # TODO: Update the key to match the API
+            api_params["ids"] = feature_ids  # TODO: Update the key to match the API
 
         """
         FILTER: Handle CQL2 filters. The cql2_to_query_params function will convert the CQL2 filter to a dictionary
@@ -152,9 +152,7 @@ class APIWrapperRemoteProvider:
 
         return api_params
 
-    def convert_results_to_gdf(
-        self, response: Union[dict, List[dict]]
-    ) -> gpd.GeoDataFrame:
+    def convert_results_to_gdf(self, response: Union[dict, List[dict]]) -> gpd.GeoDataFrame:
         """
         Convert the response from the API to a GeoDataFrame. We are assuming the response is a list of json/dict.
         You may need to get the "results" key from the response, depending on the API.
@@ -230,9 +228,7 @@ class APIWrapperRemoteProvider:
 
         return gdf
 
-    def search(
-        self, pagination={}, provider_properties={}, **kwargs
-    ) -> gpd.GeoDataFrame:
+    def search(self, pagination={}, provider_properties={}, **kwargs) -> gpd.GeoDataFrame:
         """Implements the Boson Search endpoint."""
         logger.info("Making request to API.")
         logger.info(f"Search received kwargs: {kwargs}")
