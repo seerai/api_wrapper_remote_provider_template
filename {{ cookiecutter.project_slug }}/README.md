@@ -8,20 +8,6 @@ request in Geodesic to an API request for the provider, and 2) receiving the res
 results into Geodesic Features. This template is set up so that the user only has to provide the
 details of those operations, depending on the API in question.
 
-## Creating Repo Using Cookiecutter
-
-To create a new repo using this template, you will need to have cookiecutter installed. You can install it using pip:
-
-```bash
-pip install cookiecutter
-```
-
-Then you can create a new repo using the following command:
-
-```bash
-cookiecutter git@github.com:seerai/api_wrapper_remote_provider_template.git
-```
-
 ---
 
 ## Prototyping the Remote Provider
